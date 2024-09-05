@@ -1,0 +1,3 @@
+[submodule "async_xmodem"]
+	path = async_xmodem
+	url = https://github.com/AndreRenaud/async_xmodem.git
