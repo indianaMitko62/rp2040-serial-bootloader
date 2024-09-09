@@ -16,7 +16,6 @@
 #include "hardware/resets.h"
 #include "hardware/uart.h"
 #include "hardware/watchdog.h"
-#include "async_xmodem/xmodem_server.h"
 
 #ifdef DEBUG
 #include <stdio.h>
@@ -24,12 +23,8 @@
 #define DBG_PRINTF_INIT() stdio_usb_init()
 #define DBG_PRINTF(...) printf(__VA_ARGS__)
 #else
-#define DBG_PRINTF_INIT() \
-	{                     \
-	}
-#define DBG_PRINTF(...) \
-	{                   \
-	}
+#define DBG_PRINTF_INIT() { }
+#define DBG_PRINTF(...) { }
 #endif
 
 // The bootloader can be entered in three ways:
@@ -41,23 +36,22 @@
 
 #define UART_TX_PIN 0
 #define UART_RX_PIN 1
-#define UART_BAUD 921600
+#define UART_BAUD   921600
 
-#define CMD_SYNC (('S' << 0) | ('Y' << 8) | ('N' << 16) | ('C' << 24))
-#define CMD_READ (('R' << 0) | ('E' << 8) | ('A' << 16) | ('D' << 24))
-#define CMD_CSUM (('C' << 0) | ('S' << 8) | ('U' << 16) | ('M' << 24))
-#define CMD_CRC (('C' << 0) | ('R' << 8) | ('C' << 16) | ('C' << 24))
-#define CMD_ERASE (('E' << 0) | ('R' << 8) | ('A' << 16) | ('S' << 24))
-#define CMD_WRITE (('W' << 0) | ('R' << 8) | ('I' << 16) | ('T' << 24))
-#define CMD_SEAL (('S' << 0) | ('E' << 8) | ('A' << 16) | ('L' << 24))
-#define CMD_GO (('G' << 0) | ('O' << 8) | ('G' << 16) | ('O' << 24))
-#define CMD_INFO (('I' << 0) | ('N' << 8) | ('F' << 16) | ('O' << 24))
+#define CMD_SYNC   (('S' << 0) | ('Y' << 8) | ('N' << 16) | ('C' << 24))
+#define CMD_READ   (('R' << 0) | ('E' << 8) | ('A' << 16) | ('D' << 24))
+#define CMD_CSUM   (('C' << 0) | ('S' << 8) | ('U' << 16) | ('M' << 24))
+#define CMD_CRC    (('C' << 0) | ('R' << 8) | ('C' << 16) | ('C' << 24))
+#define CMD_ERASE  (('E' << 0) | ('R' << 8) | ('A' << 16) | ('S' << 24))
+#define CMD_WRITE  (('W' << 0) | ('R' << 8) | ('I' << 16) | ('T' << 24))
+#define CMD_SEAL   (('S' << 0) | ('E' << 8) | ('A' << 16) | ('L' << 24))
+#define CMD_GO     (('G' << 0) | ('O' << 8) | ('G' << 16) | ('O' << 24))
+#define CMD_INFO   (('I' << 0) | ('N' << 8) | ('F' << 16) | ('O' << 24))
 #define CMD_REBOOT (('B' << 0) | ('O' << 8) | ('O' << 16) | ('T' << 24))
-#define CMD_UPDATE (('U' << 0) | ('P' << 8) | ('D' << 16) | ('T' << 24))
 
 #define RSP_SYNC (('P' << 0) | ('I' << 8) | ('C' << 16) | ('O' << 24))
-#define RSP_OK (('O' << 0) | ('K' << 8) | ('O' << 16) | ('K' << 24))
-#define RSP_ERR (('E' << 0) | ('R' << 8) | ('R' << 16) | ('!' << 24))
+#define RSP_OK   (('O' << 0) | ('K' << 8) | ('O' << 16) | ('K' << 24))
+#define RSP_ERR  (('E' << 0) | ('R' << 8) | ('R' << 16) | ('!' << 24))
 
 #define IMAGE_HEADER_OFFSET (12 * 1024)
 
@@ -75,11 +69,12 @@ static void disable_interrupts(void)
 
 static void reset_peripherals(void)
 {
-	reset_block(~(
-		RESETS_RESET_IO_QSPI_BITS |
-		RESETS_RESET_PADS_QSPI_BITS |
-		RESETS_RESET_SYSCFG_BITS |
-		RESETS_RESET_PLL_SYS_BITS));
+    reset_block(~(
+            RESETS_RESET_IO_QSPI_BITS |
+            RESETS_RESET_PADS_QSPI_BITS |
+            RESETS_RESET_SYSCFG_BITS |
+            RESETS_RESET_PLL_SYS_BITS
+    ));
 }
 
 static void jump_to_vtor(uint32_t vtor)
@@ -92,8 +87,9 @@ static void jump_to_vtor(uint32_t vtor)
 
 	SCB->VTOR = (volatile uint32_t)(vtor);
 
-	asm volatile("msr msp, %0" ::"g"(*(volatile uint32_t *)vtor));
-	asm volatile("bx %0" ::"r"(reset_vector));
+	asm volatile("msr msp, %0"::"g"
+			(*(volatile uint32_t *)vtor));
+	asm volatile("bx %0"::"r" (reset_vector));
 }
 
 static uint32_t handle_sync(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
@@ -111,10 +107,8 @@ static uint32_t handle_go(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_ar
 static uint32_t handle_info(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
 static uint32_t size_reboot(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out);
 static uint32_t handle_reboot(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
-static uint32_t handle_update(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
 
-struct command_desc
-{
+struct command_desc {
 	uint32_t opcode;
 	uint32_t nargs;
 	uint32_t resp_nargs;
@@ -211,17 +205,10 @@ const struct command_desc cmds[] = {
 		.size = &size_reboot,
 		.handle = &handle_reboot,
 	},
-    {
-        .opcode = CMD_UPDATE,
-        .nargs = 0,
-        .resp_nargs = 0,
-        .size = NULL,
-        .handle = &handle_update,
-    }
 };
 const unsigned int N_CMDS = (sizeof(cmds) / sizeof(cmds[0]));
 const uint32_t MAX_NARG = 5;
-const uint32_t MAX_DATA_LEN = 1024; // FLASH_SECTOR_SIZE;
+const uint32_t MAX_DATA_LEN = 1024; //FLASH_SECTOR_SIZE;
 
 static bool is_error(uint32_t status)
 {
@@ -236,8 +223,7 @@ static uint32_t handle_sync(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 static uint32_t size_read(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out)
 {
 	uint32_t size = args_in[1];
-	if (size > MAX_DATA_LEN)
-	{
+	if (size > MAX_DATA_LEN) {
 		return RSP_ERR;
 	}
 
@@ -264,8 +250,7 @@ static uint32_t size_csum(uint32_t *args_in, uint32_t *data_len_out, uint32_t *r
 	uint32_t addr = args_in[0];
 	uint32_t size = args_in[1];
 
-	if ((addr & 0x3) || (size & 0x3))
-	{
+	if ((addr & 0x3) || (size & 0x3)) {
 		// Must be aligned
 		return RSP_ERR;
 	}
@@ -312,8 +297,7 @@ static uint32_t size_crc(uint32_t *args_in, uint32_t *data_len_out, uint32_t *re
 	uint32_t addr = args_in[0];
 	uint32_t size = args_in[1];
 
-	if ((addr & 0x3) || (size & 0x3))
-	{
+	if ((addr & 0x3) || (size & 0x3)) {
 		// Must be aligned
 		return RSP_ERR;
 	}
@@ -374,14 +358,12 @@ static uint32_t handle_erase(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 	uint32_t addr = args_in[0];
 	uint32_t size = args_in[1];
 
-	if ((addr < ERASE_ADDR_MIN) || (addr + size >= FLASH_ADDR_MAX))
-	{
+	if ((addr < ERASE_ADDR_MIN) || (addr + size >= FLASH_ADDR_MAX)) {
 		// Outside flash
 		return RSP_ERR;
 	}
 
-	if ((addr & (FLASH_SECTOR_SIZE - 1)) || (size & (FLASH_SECTOR_SIZE - 1)))
-	{
+	if ((addr & (FLASH_SECTOR_SIZE - 1)) || (size & (FLASH_SECTOR_SIZE - 1))) {
 		// Must be aligned
 		return RSP_ERR;
 	}
@@ -396,20 +378,17 @@ static uint32_t size_write(uint32_t *args_in, uint32_t *data_len_out, uint32_t *
 	uint32_t addr = args_in[0];
 	uint32_t size = args_in[1];
 
-	if ((addr < WRITE_ADDR_MIN) || (addr + size >= FLASH_ADDR_MAX))
-	{
+	if ((addr < WRITE_ADDR_MIN) || (addr + size >= FLASH_ADDR_MAX)) {
 		// Outside flash
 		return RSP_ERR;
 	}
 
-	if ((addr & (FLASH_PAGE_SIZE - 1)) || (size & (FLASH_PAGE_SIZE - 1)))
-	{
+	if ((addr & (FLASH_PAGE_SIZE - 1)) || (size & (FLASH_PAGE_SIZE -1))) {
 		// Must be aligned
 		return RSP_ERR;
 	}
 
-	if (size > MAX_DATA_LEN)
-	{
+	if (size > MAX_DATA_LEN) {
 		return RSP_ERR;
 	}
 
@@ -433,8 +412,7 @@ static uint32_t handle_write(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 	return RSP_OK;
 }
 
-struct image_header
-{
+struct image_header {
 	uint32_t vtor;
 	uint32_t size;
 	uint32_t crc;
@@ -449,26 +427,24 @@ static bool image_header_ok(struct image_header *hdr)
 	uint32_t calc = calc_crc32((void *)hdr->vtor, hdr->size);
 
 	// CRC has to match
-	if (calc != hdr->crc)
-	{
+	if (calc != hdr->crc) {
 		return false;
 	}
 
 	// Stack pointer needs to be in RAM
-	if (vtor[0] < SRAM_BASE)
-	{
+	if (vtor[0] < SRAM_BASE) {
 		return false;
 	}
 
 	// Reset vector should be in the image, and thumb (bit 0 set)
-	if ((vtor[1] < hdr->vtor) || (vtor[1] > hdr->vtor + hdr->size) || !(vtor[1] & 1))
-	{
+	if ((vtor[1] < hdr->vtor) || (vtor[1] > hdr->vtor + hdr->size) || !(vtor[1] & 1)) {
 		return false;
 	}
 
 	// Looks OK.
 	return true;
 }
+
 
 static uint32_t handle_seal(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
 {
@@ -478,14 +454,12 @@ static uint32_t handle_seal(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 		.crc = args_in[2],
 	};
 
-	if ((hdr.vtor & 0xff) || (hdr.size & 0x3))
-	{
+	if ((hdr.vtor & 0xff) || (hdr.size & 0x3)) {
 		// Must be aligned
 		return RSP_ERR;
 	}
 
-	if (!image_header_ok(&hdr))
-	{
+	if (!image_header_ok(&hdr)) {
 		return RSP_ERR;
 	}
 
@@ -493,8 +467,7 @@ static uint32_t handle_seal(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 	flash_range_program(IMAGE_HEADER_OFFSET, (const uint8_t *)&hdr, sizeof(hdr));
 
 	struct image_header *check = (struct image_header *)(XIP_BASE + IMAGE_HEADER_OFFSET);
-	if (memcmp(&hdr, check, sizeof(hdr)))
-	{
+	if (memcmp(&hdr, check, sizeof(hdr))) {
 		return RSP_ERR;
 	}
 
@@ -509,8 +482,7 @@ static uint32_t handle_go(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_ar
 
 	jump_to_vtor(args_in[0]);
 
-	while (1)
-		;
+	while(1);
 
 	return RSP_ERR;
 }
@@ -529,19 +501,15 @@ static uint32_t handle_info(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 static void do_reboot(bool to_bootloader)
 {
 	hw_clear_bits(&watchdog_hw->ctrl, WATCHDOG_CTRL_ENABLE_BITS);
-	if (to_bootloader)
-	{
+	if (to_bootloader) {
 		watchdog_hw->scratch[5] = BOOTLOADER_ENTRY_MAGIC;
 		watchdog_hw->scratch[6] = ~BOOTLOADER_ENTRY_MAGIC;
-	}
-	else
-	{
+	} else {
 		watchdog_hw->scratch[5] = 0;
 		watchdog_hw->scratch[6] = 0;
 	}
 	watchdog_reboot(0, 0, 0);
-	while (1)
-	{
+	while (1) {
 		tight_loop_contents();
 		asm("");
 	}
@@ -567,10 +535,8 @@ static const struct command_desc *find_command_desc(uint32_t opcode)
 {
 	unsigned int i;
 
-	for (i = 0; i < N_CMDS; i++)
-	{
-		if (cmds[i].opcode == opcode)
-		{
+	for (i = 0; i < N_CMDS; i++) {
+		if (cmds[i].opcode == opcode) {
 			return &cmds[i];
 		}
 	}
@@ -578,15 +544,7 @@ static const struct command_desc *find_command_desc(uint32_t opcode)
 	return NULL;
 }
 
-static uint32_t handle_update(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
-{
-    struct xmodem_server xdm;
-    return RSP_OK;
-}
-
-
-struct cmd_context
-{
+struct cmd_context {
 	uint8_t *uart_buf;
 	const struct command_desc *desc;
 	uint32_t opcode;
@@ -599,8 +557,7 @@ struct cmd_context
 	uint32_t resp_data_len;
 };
 
-enum state
-{
+enum state {
 	STATE_WAIT_FOR_SYNC,
 	STATE_READ_OPCODE,
 	STATE_READ_ARGS,
@@ -619,18 +576,14 @@ static enum state state_wait_for_sync(struct cmd_context *ctx)
 
 	gpio_put(PICO_DEFAULT_LED_PIN, 1);
 
-	while (idx < sizeof(ctx->opcode))
-	{
+	while (idx < sizeof(ctx->opcode)) {
 		uart_read_blocking(uart0, &recv[idx], 1);
 		gpio_xor_mask((1 << PICO_DEFAULT_LED_PIN));
 
-		if (recv[idx] != match[idx])
-		{
+		if (recv[idx] != match[idx]) {
 			// Start again
 			idx = 0;
-		}
-		else
-		{
+		} else {
 			// Move on
 			idx++;
 		}
@@ -651,8 +604,7 @@ static enum state state_read_opcode(struct cmd_context *ctx)
 static enum state state_read_args(struct cmd_context *ctx)
 {
 	const struct command_desc *desc = find_command_desc(ctx->opcode);
-	if (!desc)
-	{
+	if (!desc) {
 		// TODO: Error handler that can do args?
 		ctx->status = RSP_ERR;
 		return STATE_ERROR;
@@ -673,16 +625,12 @@ static enum state state_read_data(struct cmd_context *ctx)
 {
 	const struct command_desc *desc = ctx->desc;
 
-	if (desc->size)
-	{
+	if (desc->size) {
 		ctx->status = desc->size(ctx->args, &ctx->data_len, &ctx->resp_data_len);
-		if (is_error(ctx->status))
-		{
+		if (is_error(ctx->status)) {
 			return STATE_ERROR;
 		}
-	}
-	else
-	{
+	} else {
 		ctx->data_len = 0;
 		ctx->resp_data_len = 0;
 	}
@@ -698,16 +646,12 @@ static enum state state_handle_data(struct cmd_context *ctx)
 {
 	const struct command_desc *desc = ctx->desc;
 
-	if (desc->handle)
-	{
+	if (desc->handle) {
 		ctx->status = desc->handle(ctx->args, ctx->data, ctx->resp_args, ctx->resp_data);
-		if (is_error(ctx->status))
-		{
+		if (is_error(ctx->status)) {
 			return STATE_ERROR;
 		}
-	}
-	else
-	{
+	} else {
 		// TODO: Should we just assert(desc->handle)?
 		ctx->status = RSP_OK;
 	}
@@ -731,7 +675,7 @@ static enum state state_error(struct cmd_context *ctx)
 static bool should_stay_in_bootloader()
 {
 	bool wd_says_so = (watchdog_hw->scratch[5] == BOOTLOADER_ENTRY_MAGIC) &&
-					  (watchdog_hw->scratch[6] == ~BOOTLOADER_ENTRY_MAGIC);
+		(watchdog_hw->scratch[6] == ~BOOTLOADER_ENTRY_MAGIC);
 
 	return !gpio_get(BOOTLOADER_ENTRY_PIN) || wd_says_so;
 }
@@ -750,8 +694,7 @@ int main(void)
 
 	struct image_header *hdr = (struct image_header *)(XIP_BASE + IMAGE_HEADER_OFFSET);
 
-	if (!should_stay_in_bootloader() && image_header_ok(hdr))
-	{
+	if (!should_stay_in_bootloader() && image_header_ok(hdr)) {
 		uint32_t vtor = *((uint32_t *)(XIP_BASE + IMAGE_HEADER_OFFSET));
 		disable_interrupts();
 		reset_peripherals();
@@ -770,10 +713,8 @@ int main(void)
 	ctx.uart_buf = uart_buf;
 	enum state state = STATE_WAIT_FOR_SYNC;
 
-	while (1)
-	{
-		switch (state)
-		{
+	while (1) {
+		switch (state) {
 		case STATE_WAIT_FOR_SYNC:
 			DBG_PRINTF("wait_for_sync\n");
 			state = state_wait_for_sync(&ctx);

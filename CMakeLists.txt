@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Build the bootloader as a standalone thing
 
-add_executable(bootloader main.c async_xmodem/xmodem_server.c)
+add_executable(bootloader main.c)
 
 function(target_cl_options option)
     target_compile_options(bootloader PRIVATE ${option})
@@ -54,9 +54,6 @@ set_target_properties(bootloader PROPERTIES COMPILE_FLAGS "-Wall")
 
 pico_set_linker_script(bootloader ${CMAKE_CURRENT_SOURCE_DIR}/bootloader.ld)
 
-#added by indiana
-# add_subdirectory(./async_xmodem)
-
 target_link_libraries(bootloader
                       pico_stdlib
                       hardware_dma
@@ -64,7 +61,6 @@ target_link_libraries(bootloader
                       hardware_structs
                       hardware_resets
                       cmsis_core)
-
 
 set(BOOTLOADER_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 
