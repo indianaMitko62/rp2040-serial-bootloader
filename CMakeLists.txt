@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Build the bootloader as a standalone thing
 
-add_executable(bootloader main.c)
+add_executable(bootloader main.c async_xmodem/xmodem_server.c)
 
 function(target_cl_options option)
     target_compile_options(bootloader PRIVATE ${option})
