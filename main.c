@@ -55,8 +55,8 @@
 #define RSP_OK   (('O' << 0) | ('K' << 8) | ('O' << 16) | ('K' << 24))
 #define RSP_ERR  (('E' << 0) | ('R' << 8) | ('R' << 16) | ('!' << 24))
 
-#define IMAGE_HEADER_OFFSET (12 * 1024)
-
+#define BOOTLOADER_FLASH_REGION_SIZE 28 // number of 1kB pages allocated for the bootloader
+#define IMAGE_HEADER_OFFSET (BOOTLOADER_FLASH_REGION_SIZE * 1024)
 #define WRITE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET + FLASH_SECTOR_SIZE)
 #define ERASE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET)
 #define FLASH_ADDR_MAX (XIP_BASE + PICO_FLASH_SIZE_BYTES)
@@ -542,7 +542,7 @@ static uint32_t handle_reboot(uint32_t *args_in, uint8_t *data_in, uint32_t *res
     return RSP_ERR;
 }
 
-void tx_byte(struct xmodem_server *xdm, uint8_t byte, void *cb_data)
+static void tx_byte(struct xmodem_server *xdm, uint8_t byte, void *cb_data)
 {
     uart_write_blocking(uart0, &byte, 1);
 }
@@ -550,13 +550,12 @@ void tx_byte(struct xmodem_server *xdm, uint8_t byte, void *cb_data)
 static uint32_t handle_update(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
 {
     struct xmodem_server xdm;
-
     xmodem_server_init(&xdm, tx_byte, NULL);
+    uint32_t block_nr = 0;
     while (!xmodem_server_is_done(&xdm))
     {
         uint8_t resp[XMODEM_MAX_PACKET_SIZE];
-        uint32_t block_nr;
-        int rx_data_len;
+        uint32_t rx_data_len;
 
         if (uart_is_readable(uart0))
         {
@@ -565,15 +564,40 @@ static uint32_t handle_update(uint32_t *args_in, uint8_t *data_in, uint32_t *res
         rx_data_len = xmodem_server_process(&xdm, resp, &block_nr, to_ms_since_boot(get_absolute_time()));
         if (rx_data_len > 0)
         {
-            //handle_incoming_packet(resp, rx_data_len, block_nr);
+            flash_range_program(WRITE_ADDR_MIN + block_nr * MAX_DATA_LEN, resp, rx_data_len);
         }
     }
     if (xmodem_server_get_state(&xdm) == XMODEM_STATE_FAILURE)
     {
-        //handle_transfer_failure();
+        return RSP_ERR;
     }
-    return RSP_OK;
 
+    struct image_header hdr = {
+        .vtor = *(uint32_t *)WRITE_ADDR_MIN,
+        .size = block_nr * MAX_DATA_LEN,
+        .crc = calc_crc32((uint32_t *)WRITE_ADDR_MIN, block_nr * MAX_DATA_LEN)
+    };
+
+    if ((hdr.vtor & 0xff) || (hdr.size & 0x3)) {
+        // Must be aligned
+        return RSP_ERR;
+    }
+
+    if (!image_header_ok(&hdr)) {
+        return RSP_ERR;
+    }
+
+    flash_range_erase(IMAGE_HEADER_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_program(IMAGE_HEADER_OFFSET, (const uint8_t *)&hdr, sizeof(hdr));
+
+    struct image_header *check = (struct image_header *)(XIP_BASE + IMAGE_HEADER_OFFSET);
+    if (memcmp(&hdr, check, sizeof(hdr))) {
+        return RSP_ERR;
+    }
+    
+    do_reboot(false);
+
+    return RSP_ERR;
 }
 
 static const struct command_desc *find_command_desc(uint32_t opcode)
